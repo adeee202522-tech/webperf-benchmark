@@ -1,14 +1,10 @@
 name: Web Performance Benchmark (Multi-Region)
 
 on:
-  # 手动触发
   workflow_dispatch:
-
-  # 定时任务（每天 UTC 8:00 = 北京时间 16:00）
   schedule:
     - cron: '0 8 * * *'
 
-# 每次最多并发 5 个 job，避免耗尽分钟数
 concurrency:
   group: webperf-${{ github.ref }}
   cancel-in-progress: false
@@ -27,15 +23,6 @@ jobs:
             url: "https://www.sigs.tsinghua.edu.cn"
 
     steps:
-      - name: Detect runner region
-        id: region
-        run: |
-          # 从 GitHub 提供的 runner环境变量推断大致地区
-          RUNNER_LABEL="${{ runner.environment }}"
-          echo "region=unknown" >> $GITHUB_OUTPUT
-          # 尝试从 URL/IP 推断（备用）
-          echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -55,19 +42,16 @@ jobs:
         env:
           TARGET_URL: ${{ matrix.target.url }}
           TARGET_NAME: ${{ matrix.target.name }}
-          REGION_LABEL: ${{ runner.environment || 'unknown' }}
-          GH_RUN_ID: ${{ github.run_id }}-${{ strategy.jobIndex }}
+          REGION_LABEL: ${{ runner.environment || 'github-runner' }}
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: lighthouse-results-${{ matrix.target.name }}-${{ github.run_id }}
-          path: |
-            ./data/*.json
+          path: ./data/*.json
           retention-days: 30
 
-  # ========== 汇总报告 ==========
   aggregate:
     needs: lighthouse
     runs-on: ubuntu-latest
@@ -81,67 +65,11 @@ jobs:
           pattern: lighthouse-results-*
           merge-multiple: true
 
-      - name: Install Python for reporting
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Install Python dependencies
+        run: pip install pandas tabulate -q
 
       - name: Generate summary report
-        run: |
-          pip install pandas tabulate -q
-          python3 << 'EOF'
-          import json, os, glob
-          from tabulate import tabulate
-
-          files = glob.glob('./results/run_*.json')
-          if not files:
-            print("No results found")
-            exit(0)
-
-          latest = max(files, key=os.path.getmtime)
-          with open(latest) as f:
-            data = json.load(f)
-
-          rows = []
-          for r in data.get('results', []):
-            if r.get('status') != 'ok':
-              continue
-            lcp = r.get('lcp', 0)
-            lcp_tag = '✅' if lcp <= 2500 else ('⚠️' if lcp <= 4000 else '❌')
-            cls = r.get('cls', 0)
-            cls_tag = '✅' if cls <= 0.1 else ('⚠️' if cls <= 0.25 else '❌')
-            rows.append([
-              r.get('url', '').replace('https://', ''),
-              r.get('ttfb', 0),
-              r.get('fcp', 0),
-              f"{lcp}{lcp_tag}",
-              f"{cls}{cls_tag}",
-              r.get('load', 0),
-              r.get('resourceCount', 0),
-              r.get('status', ''),
-            ])
-
-          headers = ['URL', 'TTFB(ms)', 'FCP(ms)', 'LCP(ms)', 'CLS', 'Load(ms)', '资源数', '状态']
-          print(f"\n## Web Performance Report\n")
-          print(f"**测试时间**: {data.get('timestamp', 'N/A')}")
-          print(f"**测试地区**: {data.get('region', 'GitHub runner')} ({data.get('isp', 'N/A')})")
-          print(f"**出口 IP**: {data.get('exit_ip', 'N/A')}")
-          print()
-          print(tabulate(rows, headers=headers, tablefmt='github'))
-          print()
-          print(f"**LCP 标准**: ✅ ≤2500ms | ⚠️ 2500-4000ms | ❌ >4000ms")
-          print(f"**CLS 标准**: ✅ ≤0.1 | ⚠️ 0.1-0.25 | ❌ >0.25")
-
-          # 保存 CSV
-          import csv
-          with open('benchmark_summary.csv', 'w', newline='') as cf:
-            w = csv.DictWriter(cf, fieldnames=['url', 'ttfb', 'fcp', 'lcp', 'cls', 'load', 'resourceCount', 'status'])
-            w.writeheader()
-            for r in data.get('results', []):
-              if r.get('status') == 'ok':
-                w.writerow({k: r.get(k, '') for k in ['url', 'ttfb', 'fcp', 'lcp', 'cls', 'load', 'resourceCount', 'status']})
-          print(f"\nCSV 已保存: benchmark_summary.csv")
-          EOF
+        run: python3 scripts/aggregate_results.py
 
       - name: Upload summary
         uses: actions/upload-artifact@v4
