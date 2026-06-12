@@ -1,0 +1,27 @@
+[
+  {
+    "url": "https://www.tsinghua.edu.cn",
+    "status": "error",
+    "error": "Too many arguments. If you need to pass more than 1 argument to the function wrap them in an object."
+  },
+  {
+    "url": "https://www.sigs.tsinghua.edu.cn",
+    "status": "error",
+    "error": "Too many arguments. If you need to pass more than 1 argument to the function wrap them in an object."
+  },
+  {
+    "url": "https://www.pku.edu.cn",
+    "status": "error",
+    "error": "Too many arguments. If you need to pass more than 1 argument to the function wrap them in an object."
+  },
+  {
+    "url": "https://www.zju.edu.cn",
+    "status": "error",
+    "error": "Too many arguments. If you need to pass more than 1 argument to the function wrap them in an object."
+  },
+  {
+    "url": "https://www.fudan.edu.cn",
+    "status": "error",
+    "error": "Too many arguments. If you need to pass more than 1 argument to the function wrap them in an object."
+  }
+]
