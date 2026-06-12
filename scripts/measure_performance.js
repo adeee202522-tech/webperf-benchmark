@@ -5,7 +5,6 @@ const path = require('path');
 // ===== 从环境变量读取目标 =====
 const TARGET_URL = process.env.TARGET_URL;
 const TARGET_NAME = process.env.TARGET_NAME || 'unknown';
-const REGION = process.env.REGION_LABEL || 'github-runner';
 const OUTPUT_DIR = path.join(process.cwd(), 'data');
 
 // ===== 核心测量逻辑 =====
@@ -94,12 +93,42 @@ async function measureSite(browser, url) {
   }
 }
 
+// ===== 检测出口 IP 和地理位置 =====
+async function detectExitInfo() {
+  try {
+    // 查询公网出口 IP
+    const ipRes = await fetch('https://ifconfig.me/ip', { timeout: 5000 });
+    const ip = await ipRes.text().then(t => t.trim());
+
+    // 查询 IP 地理位置
+    const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,regionName,isp,query`, { timeout: 5000 });
+    const geo = await geoRes.json();
+
+    if (geo.status === 'success') {
+      return {
+        exit_ip: ip,
+        region: `${geo.country} / ${geo.city} (${geo.isp})`,
+        country_code: geo.countryCode,
+        city: geo.city,
+        isp: geo.isp
+      };
+    }
+    return { exit_ip: ip, region: `IP: ${ip}`, country_code: '', city: '', isp: '' };
+  } catch (e) {
+    return { exit_ip: 'unknown', region: 'unknown', country_code: '', city: '', isp: '' };
+  }
+}
+
 // ===== 主程序 =====
 async function main() {
   if (!TARGET_URL) {
     console.error('ERROR: TARGET_URL not set');
     process.exit(1);
   }
+
+  // 检测出口 IP 和地理位置
+  const exitInfo = await detectExitInfo();
+  console.error(`Exit IP: ${exitInfo.exit_ip}, Region: ${exitInfo.region}`);
 
   // 确保输出目录存在
   if (!fs.existsSync(OUTPUT_DIR)) {
@@ -123,10 +152,13 @@ async function main() {
   const outPath = path.join(OUTPUT_DIR, `run_${timestamp}.json`);
   fs.writeFileSync(outPath, JSON.stringify({
     timestamp: new Date().toISOString(),
-    region: REGION,
+    region: exitInfo.region,
+    exit_ip: exitInfo.exit_ip,
+    country_code: exitInfo.country_code,
+    city: exitInfo.city,
+    isp: exitInfo.isp,
     target: TARGET_NAME,
     url: TARGET_URL,
-    exit_ip: '',  // GitHub runner 不提供出口 IP
     results: [result]
   }, null, 2));
 
