@@ -12,7 +12,7 @@ concurrency:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -37,12 +37,12 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium --with-deps
 
-      - name: Run Performance Measurement
+      - name: Run Performance Measurement (3x for multi-region)
         run: node scripts/measure_performance.js
         env:
           TARGET_URL: ${{ matrix.target.url }}
           TARGET_NAME: ${{ matrix.target.name }}
-          REGION_LABEL: ${{ runner.environment || 'github-runner' }}
+          NUM_RUNS: '3'
 
       - name: Upload results
         uses: actions/upload-artifact@v4
@@ -50,13 +50,16 @@ jobs:
         with:
           name: lighthouse-results-${{ matrix.target.name }}-${{ github.run_id }}
           path: ./data/*.json
-          retention-days: 30
+          retention-days: 1
 
   aggregate:
     needs: lighthouse
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Clean old results
+        run: rm -rf ./results && mkdir ./results
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -70,6 +73,8 @@ jobs:
 
       - name: Generate summary report
         run: python3 scripts/aggregate_results.py
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
 
       - name: Upload summary
         uses: actions/upload-artifact@v4

@@ -135,14 +135,27 @@ async function main() {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  console.error(`Starting browser for ${TARGET_NAME}...`);
+  const RUNS = parseInt(process.env.NUM_RUNS || '3');  // 每次运行跑3次，捕获不同出口IP
+  console.error(`Starting browser for ${TARGET_NAME} (${RUNS} runs)...`);
   const browser = await chromium.launch({
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-web-security']
   });
 
-  console.error('Browser ready. Running measurement...');
-  const result = await measureSite(browser, TARGET_URL);
+  const allResults = [];
+  for (let i = 0; i < RUNS; i++) {
+    console.error(`Run ${i+1}/${RUNS}: Running measurement...`);
+    const result = await measureSite(browser, TARGET_URL);
+    // 每次运行后重新检测出口IP（可能换节点）
+    const exitInfo = await detectExitInfo();
+    result.exit_ip = exitInfo.exit_ip;
+    result.region_detail = exitInfo.region;
+    allResults.push(result);
+    console.error(`  Run ${i+1}: IP=${exitInfo.exit_ip}, LCP=${result.lcp}ms`);
+  }
   await browser.close();
+
+  // 取最后一次结果作为主结果
+  const result = allResults[allResults.length - 1];
 
   // 输出 JSON 行供 GitHub Actions 捕获
   console.log(JSON.stringify(result));
@@ -150,17 +163,16 @@ async function main() {
   // 保存数据
   const timestamp = Date.now();
   const outPath = path.join(OUTPUT_DIR, `run_${timestamp}.json`);
-  fs.writeFileSync(outPath, JSON.stringify({
+  // 保存所有轮次的结果
+  const combined = {
     timestamp: new Date().toISOString(),
-    region: exitInfo.region,
-    exit_ip: exitInfo.exit_ip,
-    country_code: exitInfo.country_code,
-    city: exitInfo.city,
-    isp: exitInfo.isp,
     target: TARGET_NAME,
     url: TARGET_URL,
-    results: [result]
-  }, null, 2));
+    num_runs: RUNS,
+    runs: allResults  // 每个元素含 exit_ip, region_detail
+  };
+  fs.writeFileSync(outPath, JSON.stringify(combined, null, 2));
+  console.error(`All ${RUNS} runs saved`);
 
   console.error(`Data saved: ${outPath}`);
 }
